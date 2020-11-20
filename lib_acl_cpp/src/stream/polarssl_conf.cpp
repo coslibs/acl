@@ -271,14 +271,16 @@ bool polarssl_conf::load(void)
 	}
 	return true;
 #else
-	logger_warn("link polarssl library in statis way!");
-	return false;
+	logger_warn("link polarssl library in static way!");
+	return true;
 #endif
 }
 
 void polarssl_conf::init_once(void)
 {
+#ifdef HAS_POLARSSL_DLL
 	load();
+#endif
 
 	lock_.lock();
 	if (has_inited_) {
@@ -573,9 +575,9 @@ bool polarssl_conf::setup_certs(void* ssl_in, bool server_side)
 #endif
 }
 
-sslbase_io* polarssl_conf::open(bool nblock)
+sslbase_io* polarssl_conf::create(bool nblock)
 {
-	return new polarssl_io(*this, server_side_, nblock);
+	return NEW polarssl_io(*this, server_side_, nblock);
 }
 
 } // namespace acl

@@ -47,20 +47,23 @@ if (ACL_CLIENT_ONLY MATCHES "YES")
 	add_definitions("-DACL_CLIENT_ONLY")
 endif()
 
+if (HAS_MBEDTLS MATCHES "YES")
+	message(STATUS "acl_cpp: HAS_MBEDTLS been set")
+	add_definitions("-DHAS_MBEDTLS")
+endif()
+
 ##############################################################################
 
 set(acl_path ${CMAKE_CURRENT_SOURCE_DIR}/../lib_acl)
 set(acl_include ${acl_path}/include)
 set(proto_path ${CMAKE_CURRENT_SOURCE_DIR}/../lib_protocol)
 set(proto_include ${proto_path}/include)
-set(zlib_include ${CMAKE_CURRENT_SOURCE_DIR}/../include/zlib)
 set(mysql_include ${CMAKE_CURRENT_SOURCE_DIR}/../include/mysql)
 set(pgsql_include ${CMAKE_CURRENT_SOURCE_DIR}/../include/pgsql)
 set(sqlite_include ${CMAKE_CURRENT_SOURCE_DIR}/../include/sqlite)
 set(polarssl_include ${CMAKE_CURRENT_SOURCE_DIR}/../include)
 
 include_directories(#if !defined(ACL_CLIENT_ONLY) && !defined(ACL_DB_DISABLE)
-	${zlib_include}
 	${mysql_include}
 	${pgsql_include}
 	${sqlite_include}
@@ -91,6 +94,7 @@ set(sources
 	${src}/memcache
 	${src}/mime
 	${src}/mime/internal
+	${src}/net
 	${src}/queue
 	${src}/redis
 	${src}/serialize
@@ -215,29 +219,32 @@ add_library(acl_cpp_static STATIC ${lib_src})
 SET_TARGET_PROPERTIES(acl_cpp_static PROPERTIES OUTPUT_NAME "acl_cpp")
 link_directories(${lib_output_path})
 
-if (${UNIX_OS})
-	if (NOT ANDROID_STL MATCHES "gnustl_shared")
-		set(CMAKE_SHARED_LINKER_FLAGS "-shared -lz -O3 -flto")
+if (NOT CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR AND ACL_BUILD_SHARED MATCHES "YES")
+	if (CMAKE_SYSTEM_NAME MATCHES "Android")
+		if (ANDROID_STL MATCHES "gnustl_shared")
+			set(sys_ldflags "-shared -lz")
+		else()
+			set(sys_ldflags "-shared -flto -lz")
+		endif()
+		target_compile_options(acl_cpp_static PRIVATE
+			-fvisibility=hidden -fvisibility-inlines-hidden)
+	elseif (CMAKE_SYSTEM_NAME MATCHES "Darwin")
+		set(sys_ldflags "-shared -lz -liconv -lpthread -ldl")
+		target_compile_options(acl_cpp_static PRIVATE
+			-fvisibility=hidden -fvisibility-inlines-hidden)
+	elseif (${UNIX_OS})
+		set(sys_ldflags "-shared -lz -lpthread -ldl")
+		target_compile_options(acl_cpp_static PRIVATE
+			-fvisibility=hidden -fvisibility-inlines-hidden)
+	endif()
+
+	if (ACL_BUILD_SHARED_ONE MATCHES "YES")
+		set(lc_flags "${lib_output_path}/libprotocol.a ${lib_output_path}/libacl.a")
+		set(CMAKE_SHARED_LINKER_FLAGS "${lc_flags} ${sys_ldflags}")
+		add_library(acl_cpp SHARED ${lib_src})
 	else()
-		set(CMAKE_SHARED_LINKER_FLAGS "-shared -lz -O3")
-	endif()
-	target_compile_options(acl_cpp_static PRIVATE
-		-fvisibility=hidden -fvisibility-inlines-hidden)
-endif()
-
-if (CMAKE_SYSTEM_NAME MATCHES "Darwin")
-	set(CMAKE_SHARED_LINKER_FLAGS
-		"${lib_output_path}/libprotocol.a ${lib_output_path}/libacl.a -liconv -lz -lpthread")
-elseif (CMAKE_SYSTEM_NAME MATCHES "Android")
-elseif (${UNIX_OS})
-	if (NOT ANDROID_STL MATCHES "gnustl_shared")
-		set(CMAKE_SHARED_LINKER_FLAGS
-			"${lib_output_path}/libprotocol.a ${lib_output_path}/libacl.a -lz -lpthread")
-	endif()
-endif()
-
-if(NOT CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
-	if (ACL_BUILD_SHARED MATCHES "YES")
+		set(lc_flags "-Wl,-rpath,. -L${lib_output_path} -lprotocol -lacl")
+		set(CMAKE_SHARED_LINKER_FLAGS "${lc_flags} ${sys_ldflags}")
 		add_library(acl_cpp SHARED ${lib_src})
 		target_link_libraries(acl_cpp protocol acl)
 	endif()

@@ -1,4 +1,4 @@
-%define release_id 4
+%define release_id 10
 
 Summary:        The powerful c/c++ library
 Name:           acl-libs
@@ -45,6 +45,32 @@ rm -rf %{buildroot}
 /usr/lib/libfiber_cpp.a
 
 %changelog
+
+* Wed Oct 28 2020 shuxin.zheng@qq.com 3.5.1-10-20201028.16
+- fixed bugs and optimize operation in acl::string
+
+* Tue Oct 27 2020 shuxin.zheng@qq.com 3.5.1-9-20201027.15
+- rewrite rfc1035 protocol for DNS module.
+
+* Thu Aug 13 2020 shuxin.zheng@qq.com 3.5.1-8-20200813.11
+- fixed bug in events_timer.c/events_timer_thr.c
+
+* Tue Aug 11 2020 shuxin.zheng@qq.com 3.5.1-7-20200811.17
+- fixed one important bug in event_timer.c/event_timer_thr.c: when one timer
+  cancel another timer, if the other timer has been in schedule queue, the
+  memory will be corrupted and process will be crashed.
+
+* Wed Aug 05 2020 shuxin.zheng@qq.com 3.5.1-6-20200805.11
+- add some function in redis module for supporting binary data
+- rewrite and optimize redis module
+- optimize fiber module for checking if a fd is socket/pipe/fifo type
+- optimize for mobile development
+
+* Sat Jun 27 2020 shuxin.zheng@qq.com 3.5.1-5-20200627.14
+- release 3.5.1-5 version
+- add memory checking module for c++
+- add http module written by c++11 in libfiber
+- don't fatal in event_limit() for IOS14.beta
 
 * Fri Jun 05 2020 shuxin.zheng@qq.com 3.5.1-4-20200605.18
 - release 3.5.1-4 version

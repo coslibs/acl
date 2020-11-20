@@ -4,7 +4,7 @@
 # ifndef ACL_CPP_API
 #  define ACL_CPP_API
 # endif
-#elif defined(ACL_CPP_DLL) || defined(_WINDLL)
+#elif defined(ACL_CPP_DLL) // || defined(_WINDLL)
 # if defined(ACL_CPP_EXPORTS) || defined(acl_cpp_EXPORTS)
 #  ifndef ACL_CPP_API
 #   define ACL_CPP_API __declspec(dllexport)
@@ -42,8 +42,14 @@
 //extern "C" { FILE _iob[3]; }
 //# endif
 # ifndef	HAS_SSIZE_T
-# define	HAS_SSIZE_T
+#  define	HAS_SSIZE_T
+#  if defined(_WIN64)
+typedef __int64 ssize_t;
+#  elif defined(_WIN32)
+typedef int ssize_t;
+#  else
 typedef long ssize_t;
+#  endif
 # endif
 # if(_MSC_VER >= 1300)
 #  include <winsock2.h>
@@ -96,3 +102,5 @@ typedef long ssize_t;
 #  define  ACL_USE_CPP11
 # endif
 #endif // __GNUC__
+
+//#define ACL_CPP_DEBUG_MEM

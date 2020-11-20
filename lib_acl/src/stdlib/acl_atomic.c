@@ -9,13 +9,60 @@
 
 #endif
 
-#if defined(ACL_ANDROID)
-# undef  HAS_ATOMIC
-#elif	defined(ACL_WINDOWS) || defined(ACL_LINUX)
-# define HAS_ATOMIC
-#else
-# undef  HAS_ATOMIC
+/* In lower NDK, atomic not support for lower Android, see:
+ * https://android.googlesource.com/toolchain/gcc/+/refs/heads/master/gcc-4.9/libgcc/config/arm/linux-atomic-64bit.c#53
+ * So, we must exclude atomic for lower Android version.
+ */
+#if !defined(ACL_ANDROID) && defined(ACL_LINUX)
+# if defined(__GNUC__) && (__GNUC__ >= 4)
+#  define HAS_ATOMIC
+# endif
 #endif
+
+#if defined(ACL_FREEBSD)
+# define HAS_ATOMIC
+#endif
+
+/*
+#ifdef arm64
+#error "arm64"
+#endif
+
+#ifdef arm64e
+#error "arm64e"
+#endif
+
+#ifdef armv7
+#error "armv7"
+#endif
+
+#ifdef armv7s
+#error "arm7s"
+#endif
+
+#ifdef i386
+#error "i386"
+#endif
+
+#ifdef x86_64
+#error "x86_64"
+#endif
+
+*/
+/* don't use atomic for IOS and MacOS */
+#if defined(ACL_MACOSX)
+#  undef HAS_ATOMIC
+#endif
+
+#if defined(ACL_WINDOWS)
+# define HAS_ATOMIC
+#endif
+
+/*
+#if !defined(HAS_ATOMIC)
+# pragma message "Atomic not support, using thread mutex instead!"
+#endif
+*/
 
 struct ACL_ATOMIC {
 	void *value;
@@ -52,15 +99,8 @@ void acl_atomic_set(ACL_ATOMIC *self, void *value)
 	acl_pthread_mutex_unlock(&self->lock);
 #elif	defined(ACL_WINDOWS)
 	InterlockedExchangePointer((volatile PVOID*) &self->value, value);
-#elif	defined(ACL_LINUX)
-# if defined(__GNUC__) && (__GNUC__ >= 4)
+#else
 	(void) __sync_lock_test_and_set(&self->value, value);
-# else
-	(void) self;
-	(void) value;
-	acl_msg_error("%s(%d), %s: not support!",
-		 __FILE__, __LINE__, __FUNCTION__);
-# endif
 #endif
 }
 
@@ -79,17 +119,8 @@ void *acl_atomic_cas(ACL_ATOMIC *self, void *cmp, void *value)
 #elif	defined(ACL_WINDOWS)
 	return InterlockedCompareExchangePointer(
 		(volatile PVOID*)&self->value, value, cmp);
-#elif	defined(ACL_LINUX)
-# if defined(__GNUC__) && (__GNUC__ >= 4)
+#else
 	return __sync_val_compare_and_swap(&self->value, cmp, value);
-# else
-	(void) self;
-	(void) cmp;
-	(void) value;
-	acl_msg_error("%s(%d), %s: not support!",
-		 __FILE__, __LINE__, __FUNCTION__);
-	return NULL;
-# endif
 #endif
 }
 
@@ -106,16 +137,8 @@ void *acl_atomic_xchg(ACL_ATOMIC *self, void *value)
 	return old;
 #elif	defined(ACL_WINDOWS)
 	return InterlockedExchangePointer((volatile PVOID*)&self->value, value);
-#elif	defined(ACL_LINUX)
-# if defined(__GNUC__) && (__GNUC__ >= 4)
+#else
 	return __sync_lock_test_and_set(&self->value, value);
-# else
-	(void) self;
-	(void) value;
-	acl_msg_error("%s(%d), %s: not support!",
-		 __FILE__, __LINE__, __FUNCTION__);
-	return NULL;
-# endif
 #endif
 }
 
@@ -127,15 +150,8 @@ void acl_atomic_int64_set(ACL_ATOMIC *self, long long n)
 	acl_pthread_mutex_unlock(&self->lock);
 #elif	defined(ACL_WINDOWS)
 	InterlockedExchangePointer((volatile PVOID*) self->value, (PVOID) n);
-#elif	defined(ACL_LINUX)
-# if defined(__GNUC__) && (__GNUC__ >= 4)
+#else
 	(void) __sync_lock_test_and_set((long long *) self->value, n);
-# else
-	(void) self;
-	(void) value;
-	acl_msg_error("%s(%d), %s: not support!",
-		 __FILE__, __LINE__, __FUNCTION__);
-# endif
 #endif
 }
 
@@ -149,16 +165,8 @@ long long acl_atomic_int64_fetch_add(ACL_ATOMIC *self, long long n)
 	return v;
 #elif	defined(ACL_WINDOWS)
 	return InterlockedExchangeAdd64((volatile LONGLONG*) self->value, n);
-#elif	defined(ACL_LINUX)
-# if defined(__GNUC__) && (__GNUC__ >= 4)
+#else
 	return (long long) __sync_fetch_and_add((long long *) self->value, n);
-# else
-	(void) self;
-	(void) n;
-	acl_msg_error("%s(%d), %s: not support!",
-		__FILE__, __LINE__, __FUNCTION__);
-	return -1;
-# endif
 #endif
 }
 
@@ -172,16 +180,8 @@ long long acl_atomic_int64_add_fetch(ACL_ATOMIC *self, long long n)
 	return v;
 #elif	defined(ACL_WINDOWS)
 	return n + InterlockedExchangeAdd64((volatile LONGLONG*) self->value, n);
-#elif	defined(ACL_LINUX)
-# if defined(__GNUC__) && (__GNUC__ >= 4)
+#else
 	return (long long) __sync_add_and_fetch((long long *) self->value, n);
-# else
-	(void) self;
-	(void) n;
-	acl_msg_error("%s(%d), %s: not support!",
-		__FILE__, __LINE__, __FUNCTION__);
-	return -1;
-# endif
 #endif
 }
 

@@ -45,7 +45,7 @@
 # ifndef ACL_API
 #  define ACL_API
 # endif
-#elif defined(ACL_DLL) || defined(_WINDLL)
+#elif defined(ACL_DLL) // || defined(_WINDLL)
 # if defined(ACL_EXPORTS) || defined(acl_EXPORTS)
 #  ifndef ACL_API
 #   define ACL_API __declspec(dllexport)
@@ -148,7 +148,13 @@ typedef int socklen_t;
 # ifndef	HAS_SSIZE_T
 #  define	HAS_SSIZE_T
 /* typedef intptr_t ssize_t; */
+#  if defined(_WIN64)
+typedef __int64 ssize_t;
+#  elif defined(_WIN32)
+typedef int ssize_t;
+#  else
 typedef long ssize_t;
+#  endif
 # endif
 
 # define ACL_INTERNAL_LOCK	ACL_FLOCK_STYLE_FLOCK

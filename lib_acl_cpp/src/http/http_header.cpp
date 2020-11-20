@@ -6,6 +6,7 @@
 #include "acl_cpp/stdlib/util.hpp"
 #include "acl_cpp/stdlib/string.hpp"
 #include "acl_cpp/stdlib/url_coder.hpp"
+#include "acl_cpp/stdlib/zlib_stream.hpp"
 #include "acl_cpp/stdlib/sha1.hpp"
 #include "acl_cpp/http/HttpCookie.hpp"
 #include "acl_cpp/http/http_header.hpp"
@@ -22,7 +23,7 @@ http_header::http_header(dbuf_guard* dbuf /* = NULL */)
 		dbuf_ = dbuf;
 		dbuf_internal_ = NULL;
 	} else {
-		dbuf_internal_ = new dbuf_guard;
+		dbuf_internal_ = NEW dbuf_guard;
 		dbuf_ = dbuf_internal_;
 	}
 	init();
@@ -35,7 +36,7 @@ http_header::http_header(const char* url, dbuf_guard* dbuf /* = NULL */)
 		dbuf_ = dbuf;
 		dbuf_internal_ = NULL;
 	} else {
-		dbuf_internal_ = new dbuf_guard;
+		dbuf_internal_ = NEW dbuf_guard;
 		dbuf_ = dbuf_internal_;
 	}
 	init();
@@ -51,7 +52,7 @@ http_header::http_header(int status, dbuf_guard* dbuf /* = NULL */)
 		dbuf_ = dbuf;
 		dbuf_internal_ = NULL;
 	} else {
-		dbuf_internal_ = new dbuf_guard;
+		dbuf_internal_ = NEW dbuf_guard;
 		dbuf_ = dbuf_internal_;
 	}
 	init();
@@ -65,7 +66,7 @@ http_header::http_header(const HTTP_HDR_RES& hdr_res, dbuf_guard* dbuf /* = NULL
 		dbuf_ = dbuf;
 		dbuf_internal_ = NULL;
 	} else {
-		dbuf_internal_ = new dbuf_guard;
+		dbuf_internal_ = NEW dbuf_guard;
 		dbuf_ = dbuf_internal_;
 	}
 
@@ -125,7 +126,7 @@ http_header::http_header(const HTTP_HDR_REQ& hdr_req, dbuf_guard* dbuf /* = NULL
 		dbuf_ = dbuf;
 		dbuf_internal_ = NULL;
 	} else {
-		dbuf_internal_ = new dbuf_guard;
+		dbuf_internal_ = NEW dbuf_guard;
 		dbuf_ = dbuf_internal_;
 	}
 
@@ -670,7 +671,11 @@ void http_header::get_range(http_off_t* from, http_off_t* to)
 
 http_header& http_header::accept_gzip(bool on)
 {
-	accept_compress_ = on;
+	if (on && zlib_stream::zlib_load_once()) {
+		accept_compress_ = on;
+	} else {
+		accept_compress_ = false;
+	}
 	return *this;
 }
 
@@ -1254,9 +1259,18 @@ http_header& http_header::set_cgi_mode(bool on)
 
 http_header& http_header::set_transfer_gzip(bool on)
 {
-	transfer_gzip_ = on;
-	if (transfer_gzip_) {
+	// 如果为 gzip 响应过程，则自动设置为响应模式
+	if (on) {
 		is_request_ = false;
+
+		// 必须尝试加载 zlib 库，如果失败，则设为非 gzip 方式
+		if (zlib_stream::zlib_load_once()) {
+			transfer_gzip_ = on;
+		} else {
+			transfer_gzip_ = on;
+		}
+	} else {
+		transfer_gzip_ = on;
 	}
 	return *this;
 }

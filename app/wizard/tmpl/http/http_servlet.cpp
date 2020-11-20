@@ -1,114 +1,109 @@
 #include "stdafx.h"
+#include "http_service.h"
 #include "http_servlet.h"
 
-http_servlet::http_servlet(acl::socket_stream* stream, acl::session* session)
-: acl::HttpServlet(stream, session)
-{
-	handlers_["/hello/"] = &http_servlet::on_hello;
-}
-
-http_servlet::~http_servlet(void)
+http_servlet::http_servlet(http_service& service, acl::socket_stream* conn,
+	acl::session* session)
+: acl::HttpServlet(conn, session), service_(service)
 {
 }
 
-bool http_servlet::doError(request_t&, response_t& res)
+http_servlet::~http_servlet(void) {}
+
+bool http_servlet::doGet(HttpRequest& req, HttpResponse& res)
+{
+	return doService(http_handler_get, req, res);
+}
+
+bool http_servlet::doPost(HttpRequest& req, HttpResponse& res)
+{
+	return doService(http_handler_post, req, res);
+}
+
+bool http_servlet::doHead(HttpRequest& req, HttpResponse& res)
+{
+	return doService(http_handler_head, req, res);
+}
+
+bool http_servlet::doPut(HttpRequest& req, HttpResponse& res)
+{
+	return doService(http_handler_put, req, res);
+}
+
+bool http_servlet::doPatch(HttpRequest& req, HttpResponse& res)
+{
+	return doService(http_handler_patch, req, res);
+}
+
+bool http_servlet::doConnect(HttpRequest& req, HttpResponse& res)
+{
+	return doService(http_handler_connect, req, res);
+}
+
+bool http_servlet::doPurge(HttpRequest& req, HttpResponse& res)
+{
+	return doService(http_handler_purge, req, res);
+}
+
+bool http_servlet::doDelete(HttpRequest& req, HttpResponse& res)
+{
+	return doService(http_handler_delete, req, res);
+}
+
+bool http_servlet::doOptions(HttpRequest& req, HttpResponse& res)
+{
+	return doService(http_handler_options, req, res);
+}
+
+bool http_servlet::doProfind(HttpRequest& req, HttpResponse& res)
+{
+	return doService(http_handler_profind, req, res);
+}
+
+bool http_servlet::doWebsocket(HttpRequest& req, HttpResponse& res)
+{
+	return doService(http_handler_websocket, req, res);
+}
+
+bool http_servlet::doUnknown(HttpRequest& req, HttpResponse& res)
+{
+	return doService(http_handler_unknown, req, res);
+}
+
+bool http_servlet::doError(HttpRequest& req, HttpResponse& res)
+{
+	return doService(http_handler_error, req, res);
+}
+
+bool http_servlet::doOther(HttpRequest&, HttpResponse& res, const char* method)
 {
 	res.setStatus(400);
 	res.setContentType("text/xml; charset=utf-8");
-
-	// ·¢ËÍ http ÏìÓ¦Ìå
+	// å‘é€ http å“åº”ä½“
 	acl::string buf;
-	buf.format("<root error='some error happened!' />\r\n");
+	buf.format("<root error='unkown method %s' />\r\n", method);
 	res.write(buf);
 	res.write(NULL, 0);
 	return false;
 }
 
-bool http_servlet::doOther(request_t&, response_t& res, const char* method)
+bool http_servlet::doService(int type, HttpRequest& req, HttpResponse& res)
 {
-	res.setStatus(400);
-	res.setContentType("text/xml; charset=utf-8");
-	// ·¢ËÍ http ÏìÓ¦Ìå
-	acl::string buf;
-	buf.format("<root error='unkown request method %s' />\r\n", method);
-	res.write(buf);
-	res.write(NULL, 0);
-	return false;
-}
-
-bool http_servlet::doGet(request_t& req, response_t& res)
-{
-	return doPost(req, res);
-}
-
-bool http_servlet::doPost(request_t& req, response_t& res)
-{
-	// Èç¹ûĞèÒª http session ¿ØÖÆ£¬Çë´ò¿ªÏÂÃæ×¢ÊÍ£¬ÇÒĞèÒª±£Ö¤
-	// ÔÚ master_service.cpp µÄº¯Êı thread_on_read ÖĞÉèÖÃµÄ
-	// memcached ·şÎñÕı³£¹¤×÷
+	// å¦‚æœéœ€è¦ http session æ§åˆ¶ï¼Œè¯·æ‰“å¼€ä¸‹é¢æ³¨é‡Šï¼Œä¸”éœ€è¦ä¿è¯
+	// åœ¨ master_service.cpp çš„å‡½æ•° thread_on_read ä¸­è®¾ç½®çš„
+	// memcached æˆ– redis æœåŠ¡æ­£å¸¸
 	/*
 	const char* sid = req.getSession().getAttribute("sid");
-	if (*sid == 0)
+	if (*sid == 0) {
 		req.getSession().setAttribute("sid", "xxxxxx");
+	}
 	sid = req.getSession().getAttribute("sid");
 	*/
 
-	// Èç¹ûĞèÒªÈ¡µÃä¯ÀÀÆ÷ cookie Çë´ò¿ªÏÂÃæ×¢ÊÍ
+	// å¦‚æœéœ€è¦å–å¾—æµè§ˆå™¨ cookie è¯·æ‰“å¼€ä¸‹é¢æ³¨é‡Š
 	/*
-	$<GET_COOKIES>
+	$<GET_COOKIES> 
 	*/
 
-	const char* ptr = req.getPathInfo();
-	if (ptr == NULL || *ptr == 0) {
-		logger_error("path null");
-		return doError(req, res);
-	}
-
-	acl::string path(ptr);
-	path.lower();
-
-	// ¸ù¾İ uri path ²éÕÒ¶ÔÓ¦µÄ´¦Àí¾ä±ú£¬´Ó¶øÊµÏÖ HTTP Â·ÓÉ¹¦ÄÜ
-
-	std::map<std::string, handler_t>::iterator it =
-		handlers_.find(path.c_str());
-
-	if (it == handlers_.end()) {
-		logger_warn("not support, path=%s", path.c_str());
-		return doError(req, res);
-	}
-
-	return (this->*it->second)(req, res);
-}
-
-bool http_servlet::on_default(request_t& req, response_t& res)
-{
-	return on_hello(req, res);
-}
-
-bool http_servlet::on_hello(request_t& req, response_t& res)
-{
-	res.setContentType("text/xml; charset=utf-8")	// ÉèÖÃÏìÓ¦×Ö·û¼¯
-		.setKeepAlive(req.isKeepAlive())	// ÉèÖÃÊÇ·ñ±£³Ö³¤Á¬½Ó
-		.setContentEncoding(true)		// ×Ô¶¯Ö§³ÖÑ¹Ëõ´«Êä
-		.setChunkedTransferEncoding(true);	// ²ÉÓÃ chunk ´«Êä·½Ê½
-
-	const char* param1 = req.getParameter("name1");
-	const char* param2 = req.getParameter("name2");
-
-	// ´´½¨ xml ¸ñÊ½µÄÊı¾İÌå
-	acl::xml1 body;
-	body.get_root()
-		.add_child("root", true)
-			.add_child("params", true)
-				.add_child("param", true)
-					.add_attr("name1", param1 ? param1 : "null")
-				.get_parent()
-				.add_child("param", true)
-					.add_attr("name2", param2 ? param2 : "null");
-	acl::string buf;
-	body.build_xml(buf);
-
-	// ·¢ËÍ http ÏìÓ¦Ìå£¬ÒòÎªÉèÖÃÁË chunk ´«ÊäÄ£Ê½£¬ËùÒÔĞèÒª¶àµ÷ÓÃÒ»´Î
-	// res.write ÇÒÁ½¸ö²ÎÊı¾ùÎª 0 ÒÔ±íÊ¾ chunk ´«ÊäÊı¾İ½áÊø
-	return res.write(buf) && res.write(NULL, 0);
+	return service_.doService(type, req, res);
 }

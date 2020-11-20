@@ -22,6 +22,7 @@
 *.user
 *.exe
 *.VC.db
+.vs/
 x64/
 build/
 Debug/
@@ -151,3 +152,6 @@ android/acl/gradle
 # xmake
 .xmake
 .DS_Store
+.idea
+.vs
+.vscode

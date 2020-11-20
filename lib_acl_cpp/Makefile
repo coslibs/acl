@@ -24,6 +24,7 @@ CFLAGS = -c -g -W \
 -DHAS_MBEDTLS_DLL \
 -Winvalid-pch \
 -DACL_PREPARE_COMPILE \
+#-DHAS_ZLIB_DLL \
 #-DACL_CLIENT_ONLY \
 #-DACL_REDIS_DISABLE \
 #-DACL_BEANSTALK_DISABLE \
@@ -161,7 +162,7 @@ LIB_PATH_DST = ./lib
 DEF_PATH_DST = ./Debug
 
 CFLAGS += -I./src -I./include -I../lib_acl/include -I../lib_protocol/include \
-	  -I../include/sqlite -I../include/mysql -I../include/zlib -I../include \
+	  -I../include/sqlite -I../include/mysql -I../include \
 	  -I../include/pgsql
 
 #Project's objs
@@ -181,6 +182,7 @@ OBJS_DST = $(patsubst %.cpp, $(OBJ_PATH_DST)/%.o, $(notdir $(wildcard src/*.cpp)
 	   $(patsubst %.cpp, $(OBJ_PATH_DST)/%.o, $(notdir $(wildcard src/smtp/*.cpp))) \
 	   $(patsubst %.cpp, $(OBJ_PATH_DST)/%.o, $(notdir $(wildcard src/mime/*.cpp))) \
 	   $(patsubst %.cpp, $(OBJ_PATH_DST)/%.o, $(notdir $(wildcard src/mime/internal/*.cpp))) \
+	   $(patsubst %.cpp, $(OBJ_PATH_DST)/%.o, $(notdir $(wildcard src/net/*.cpp))) \
 	   $(patsubst %.cpp, $(OBJ_PATH_DST)/%.o, $(notdir $(wildcard src/connpool/*.cpp))) \
 	   $(patsubst %.cpp, $(OBJ_PATH_DST)/%.o, $(notdir $(wildcard src/redis/*.cpp))) \
 	   $(patsubst %.cpp, $(OBJ_PATH_DST)/%.o, $(notdir $(wildcard src/disque/*.cpp))) \
@@ -202,6 +204,7 @@ OBJS_DEF = $(patsubst %.cpp, $(DEF_PATH_DST)/%.inc, $(notdir $(wildcard src/*.cp
 	   $(patsubst %.cpp, $(DEF_PATH_DST)/%.inc, $(notdir $(wildcard src/smtp/*.cpp))) \
 	   $(patsubst %.cpp, $(DEF_PATH_DST)/%.inc, $(notdir $(wildcard src/mime/*.cpp))) \
 	   $(patsubst %.cpp, $(DEF_PATH_DST)/%.inc, $(notdir $(wildcard src/mime/internal/*.cpp))) \
+	   $(patsubst %.cpp, $(DEF_PATH_DST)/%.inc, $(notdir $(wildcard src/net/*.cpp))) \
 	   $(patsubst %.cpp, $(DEF_PATH_DST)/%.inc, $(notdir $(wildcard src/connpool/*.cpp))) \
 	   $(patsubst %.cpp, $(DEF_PATH_DST)/%.inc, $(notdir $(wildcard src/redis/*.cpp))) \
 	   $(patsubst %.cpp, $(DEF_PATH_DST)/%.inc, $(notdir $(wildcard src/disque/*.cpp))) \
@@ -322,6 +325,8 @@ $(OBJ_PATH_DST)/%.o: ./src/smtp/%.cpp
 $(OBJ_PATH_DST)/%.o: ./src/mime/%.cpp
 	$(COMPILE_OBJ)
 $(OBJ_PATH_DST)/%.o: ./src/mime/internal/%.cpp
+	$(COMPILE_OBJ)
+$(OBJ_PATH_DST)/%.o: ./src/net/%.cpp
 	$(COMPILE_OBJ)
 $(OBJ_PATH_DST)/%.o: ./src/redis/%.cpp
 	$(COMPILE_OBJ)

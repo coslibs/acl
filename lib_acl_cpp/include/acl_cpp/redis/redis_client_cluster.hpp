@@ -178,6 +178,21 @@ public:
 	 */
 	const char* get_password(const char* addr) const;
 
+	/**
+	 * 重定向至目标 redis 节点
+	 * @param addr {const char*} 目标 redis 服务地址
+	 * @param max_conns {size_t} 连接池最大连接数
+	 * @return {redis_client*} 获得与目标 redis 节点的连接通信对象
+	 */
+	redis_client* redirect(const char* addr, size_t max_conns);
+
+	/**
+	 * 根据 redis 集群的槽号获得连接对象
+	 * @param slot {int} redis 集群键值对应的存储槽槽号
+	 * @return {redis_client*} 获得与目标 redis 节点的连接通信对象
+	 */
+	redis_client* peek_conn(int slot);
+
 protected:
 	/**
 	 * 基类纯虚函数，用来创建连接池对象，该函数返回后由基类设置网络连接及IO 超时时间
@@ -201,6 +216,20 @@ private:
 	int redirect_sleep_;
 	std::map<string, string> passwds_;
 	sslbase_conf* ssl_conf_;
+
+	const char* get_addr(dbuf_pool* dbuf, const char* info);
+
+	redis_client* reopen(redis_command& cmd, redis_client* conn);
+	redis_client* move(redis_command& cd, redis_client* conn, 
+			const char* ptr, int nretried);
+	redis_client* ask(redis_command& cd, redis_client* conn, 
+			const char* ptr, int nretried);
+	redis_client* cluster_down(redis_command& cd, redis_client* conn, 
+			const char* ptr, int nretried);
+
+public:
+	const redis_result* run(redis_command& cmd, size_t nchild,
+			int* timeout = NULL);
 };
 
 } // namespace acl

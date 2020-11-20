@@ -17,8 +17,7 @@ namespace acl
 #define INT_LEN		11
 
 disque::disque(void)
-: redis_command(NULL)
-, job_(NULL)
+: job_(NULL)
 , version_(0)
 {
 }
@@ -30,8 +29,15 @@ disque::disque(redis_client* conn)
 {
 }
 
-disque::disque(redis_client_cluster* cluster, size_t max_conns)
-: redis_command(cluster, max_conns)
+disque::disque(redis_client_cluster* cluster)
+: redis_command(cluster)
+, job_(NULL)
+, version_(0)
+{
+}
+
+disque::disque(redis_client_cluster* cluster, size_t)
+: redis_command(cluster)
 , job_(NULL)
 , version_(0)
 {
@@ -293,7 +299,7 @@ const std::vector<disque_job*>* disque::get_jobs(const char* name)
 				continue;
 			}
 
-			disque_job* job = new disque_job;
+			disque_job* job = NEW disque_job;
 			jobs_.push_back(job);
 
 			jobs[0]->argv_to_string(buf);
@@ -308,7 +314,7 @@ const std::vector<disque_job*>* disque::get_jobs(const char* name)
 			job->set_body(buf.c_str(), buf.length());
 			buf.clear();
 		} else {
-			disque_job* job = new disque_job;
+			disque_job* job = NEW disque_job;
 			jobs_.push_back(job);
 
 			job->set_queue(name);

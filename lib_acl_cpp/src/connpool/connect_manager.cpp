@@ -177,15 +177,37 @@ void connect_manager::set(const char* addr, size_t count,
 	buf.lower();
 
 	lock_guard guard(lock_);
-	std::map<string, conn_config>::const_iterator cit = addrs_.find(buf);
-	if (cit == addrs_.end()) {
+	std::map<string, conn_config>::iterator it = addrs_.find(buf);
+	if (it == addrs_.end()) {
 		conn_config config;
 		config.addr         = addr;
 		config.count        = count;
 		config.conn_timeout = conn_timeout;
 		config.rw_timeout   = rw_timeout;
 		addrs_[buf]         = config;
+	} else {
+		it->second.count          = count;
+		it->second.conn_timeout   = conn_timeout;
+		it->second.rw_timeout     = rw_timeout;
 	}
+}
+
+const conn_config* connect_manager::get_config(const char* addr,
+	bool use_first /* false */)
+{
+	string buf(addr);
+	buf.lower();
+
+	lock_guard guard(lock_);
+	std::map<string, conn_config>::const_iterator cit = addrs_.find(buf);
+	if (cit != addrs_.end()) {
+		return &cit->second;
+	}
+	if (!use_first || addrs_.empty()) {
+		return NULL;
+	}
+	cit = addrs_.begin();
+	return &cit->second;
 }
 
 #define DEFAULT_ID	0
@@ -239,7 +261,7 @@ conns_pools& connect_manager::get_pools_by_id(unsigned long id)
 		return *mit->second;
 	}
 
-	conns_pools* pools  = new conns_pools;
+	conns_pools* pools  = NEW conns_pools;
 	manager_[id] = pools;
 	//printf("thread id=%lu create pools, %lu\r\n", id, pthread_self());
 

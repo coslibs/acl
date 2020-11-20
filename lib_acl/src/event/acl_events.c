@@ -48,7 +48,7 @@ static void event_init(ACL_EVENT *eventp, int fdsize,
 	eventp->delay_usec = delay_usec % 1000000;
 
 	acl_ring_init(&eventp->timer_head);
-	eventp->timers = acl_fifo_new();
+	acl_ring_init(&eventp->timers);
 
 	SET_TIME(eventp->present);
 	SET_TIME(eventp->last_debug);
@@ -66,8 +66,9 @@ static int event_limit(int fdsize)
 
 #if defined(ACL_UNIX) && !defined(MINGW)
 	if ((fdsize = acl_open_limit(fdsize)) < 0) {
-		acl_msg_fatal("%s: unable to determine open file limit, err=%s",
+		acl_msg_error("%s: unable to determine open file limit, err=%s",
 			myname, acl_last_serror());
+		fdsize = 10240;
 	}
 #else
 	if (fdsize == 0)
@@ -251,7 +252,6 @@ ACL_EVENT *acl_event_new(int event_mode, int use_thr,
 			eventp = acl_event_new_poll(delay_sec, delay_usec);
 			break;
 		case ACL_EVENT_WMSG:
-			/* ʹ�ø�ֵ��Ϊ��Ϣ�� */
 			eventp = acl_event_new_wmsg((unsigned int) delay_sec);
 			break;
 		default:
@@ -294,7 +294,6 @@ void acl_event_free(ACL_EVENT *eventp)
 		acl_myfree(timer);
 	}
 
-	acl_fifo_free(eventp->timers, NULL);
 	acl_myfree(eventp->fdtabs);
 	acl_myfree(eventp->ready);
 	free_fn(eventp);

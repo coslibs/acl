@@ -15,11 +15,15 @@
  */
 typedef struct ACL_HOSTNAME ACL_HOST_INFO;
 typedef struct ACL_HOSTNAME {
-	char   ip[64];                  /**< the ip addr of the HOST */
+	char  ip[256];                  /**< the ip addr of the HOST */
 	ACL_SOCKADDR saddr;		/**< ip addr in ACL_SOCKADDR */
 	unsigned int ttl;               /**< the HOST's ip timeout(second) */
 	int   hport;
 	unsigned int nrefer;            /**< refer number to this HOST */
+	unsigned int type;		/**< the content type in ip buf */
+#define	ACL_HOSTNAME_TYPE_IPV4		0
+#define	ACL_HOSTNAME_TYPE_IPV6		1
+#define	ACL_HOSTNAME_TYPE_CNAME		2
 } ACL_HOSTNAME;
 
 /**

@@ -216,10 +216,15 @@ char& string::operator [](int n)
 
 string& string::operator =(const char* s)
 {
-	if (s != NULL && *s) {
-		SCP(vbf_, s);
+	if (s == NULL) {
+		return *this;
 	}
-
+	
+	if (*s != 0) {
+		SCP(vbf_, s);
+	} else {
+		clear();
+	}
 	return *this;
 }
 
@@ -228,16 +233,23 @@ string& string::operator =(const string& s)
 	if (!s.empty()) {
 		MCP(vbf_, STR(s.vbf_), LEN(s.vbf_));
 		TERM(vbf_);
+	} else {
+		clear();
 	}
-
 	return *this;
 }
 
 string& string::operator =(const string* s)
 {
-	if (s != NULL && !s->empty()) {
+	if (s == NULL) {
+		return *this;
+	}
+	
+	if (!s->empty()) {
 		MCP(vbf_, STR(s->vbf_), LEN(s->vbf_));
 		TERM(vbf_);
+	} else {
+		clear();
 	}
 	return *this;
 }
@@ -247,15 +259,23 @@ string& string::operator =(const std::string& s)
 	if (!s.empty()) {
 		MCP(vbf_, s.c_str(), s.size());
 		TERM(vbf_);
+	} else {
+		clear();
 	}
 	return *this;
 }
 
 string& string::operator =(const std::string* s)
 {
-	if (s != NULL && !s->empty()) {
+	if (s == NULL) {
+		return *this;
+	}
+	
+	if (!s->empty()) {
 		MCP(vbf_, s->c_str(), s->size());
 		TERM(vbf_);
+	} else {
+		clear();
 	}
 	return *this;
 }
@@ -362,47 +382,45 @@ string& string::operator =(unsigned char n)
 
 string& string::operator +=(const char* s)
 {
-	if (s == NULL) {
-		return *this;
+	if (s != NULL && *s != 0) {
+		SCAT(vbf_, s);
 	}
-
-	SCAT(vbf_, s);
 	return *this;
 }
 
 string& string::operator +=(const string& s)
 {
-	MCAT(vbf_, STR(s.vbf_), LEN(s.vbf_));
-	TERM(vbf_);
+	if (!s.empty()) {
+		MCAT(vbf_, STR(s.vbf_), LEN(s.vbf_));
+		TERM(vbf_);
+	}
 	return *this;
 }
 
 string& string::operator +=(const string* s)
 {
-	if (s == NULL) {
-		return *this;
+	if (s != NULL && !s->empty()) {
+		MCAT(vbf_, STR(s->vbf_), LEN(s->vbf_));
+		TERM(vbf_);
 	}
-
-	MCAT(vbf_, STR(s->vbf_), LEN(s->vbf_));
-	TERM(vbf_);
 	return *this;
 }
 
 string& string::operator +=(const std::string& s)
 {
-	MCAT(vbf_, s.c_str(), s.size());
-	TERM(vbf_);
+	if (!s.empty()) {
+		MCAT(vbf_, s.c_str(), s.size());
+		TERM(vbf_);
+	}
 	return *this;
 }
 
 string& string::operator +=(const std::string* s)
 {
-	if (s == NULL) {
-		return *this;
+	if (s != NULL && !s->empty()) {
+		MCAT(vbf_, s->c_str(), s->size());
+		TERM(vbf_);
 	}
-
-	MCAT(vbf_, s->c_str(), s->size());
-	TERM(vbf_);
 	return *this;
 }
 
@@ -1167,22 +1185,22 @@ char* string::rfind(const char* needle, bool case_sensitive) const
 	}
 }
 
-string string::left(size_t npos)
+string string::left(size_t n)
 {
-	if (npos >= LEN(vbf_)) {
+	if (n >= LEN(vbf_)) {
 		return *this;
 	}
-	return string(STR(vbf_), npos);
+	return string(STR(vbf_), n);
 }
 
-string string::right(size_t npos)
+string string::right(size_t n)
 {
-	npos++;
-	if (npos >= LEN(vbf_)) {
+	n++;
+	if (n >= LEN(vbf_)) {
 		return string(1);
 	}
-	size_t nLeft = LEN(vbf_) - npos;
-	return string(STR(vbf_) + npos, nLeft);
+	size_t nLeft = LEN(vbf_) - n;
+	return string(STR(vbf_) + n, nLeft);
 }
 
 std::list<acl::string>& string::split(const char* sep, bool quoted /* = false */)
@@ -1650,17 +1668,17 @@ string& string::upper(void)
 	return *this;
 }
 
-size_t string::substr(string& out, size_t pos /* = 0 */, size_t len /* = 0 */) const
+size_t string::substr(string& out, size_t p /* = 0 */, size_t len /* = 0 */) const
 {
 	size_t n = LEN(vbf_);
-	if (pos >= n) {
+	if (p >= n) {
 		return 0;
 	}
-	n -= pos;
+	n -= p;
 	if (len == 0 || len > n) {
 		len = n;
 	}
-	out.append(STR(vbf_) + pos, len);
+	out.append(STR(vbf_) + p, len);
 	return n;
 }
 

@@ -6,6 +6,7 @@
 #include "acl_cpp/redis/redis_client.hpp"
 #include "acl_cpp/redis/redis_client_pool.hpp"
 #include "acl_cpp/redis/redis_client_cluster.hpp"
+#include "acl_cpp/redis/redis_client_pipeline.hpp"
 #include "acl_cpp/redis/redis_result.hpp"
 #include "acl_cpp/redis/redis_command.hpp"
 #endif
@@ -19,69 +20,46 @@ namespace acl
 #define INT_LEN		11
 #define	LONG_LEN	21
 
-redis_command::redis_command()
-: check_addr_(false)
-, conn_(NULL)
-, cluster_(NULL)
-, max_conns_(0)
-, slot_(-1)
-, redirect_max_(15)
-, redirect_sleep_(100)
-, slice_req_(false)
-, request_buf_(NULL)
-, request_obj_(NULL)
-, argv_size_(0)
-, argv_(NULL)
-, argv_lens_(NULL)
-, slice_res_(false)
-, result_(NULL)
+void redis_command::init(void)
 {
-	dbuf_ = new dbuf_pool();
-	addr_[0] = 0;
+	check_addr_     = false;
+	conn_           = NULL;
+	cluster_        = NULL;
+	pipeline_       = NULL;
+	slot_           = -1;
+	redirect_max_   = 15;
+	redirect_sleep_ = 100;
+	slice_req_      = false;
+	request_buf_    = NULL;
+	request_obj_    = NULL;
+	argv_size_      = 0;
+	argv_           = NULL;
+	argv_lens_      = NULL;
+	slice_res_      = false;
+	result_         = NULL;
+	addr_[0]        = 0;
+	dbuf_           = new dbuf_pool();
 }
 
+redis_command::redis_command(void)
+{
+	init();
+}
 
 redis_command::redis_command(redis_client* conn)
-: check_addr_(false)
-, conn_(conn)
-, cluster_(NULL)
-, max_conns_(0)
-, slot_(-1)
-, redirect_max_(15)
-, redirect_sleep_(100)
-, slice_req_(false)
-, request_buf_(NULL)
-, request_obj_(NULL)
-, argv_size_(0)
-, argv_(NULL)
-, argv_lens_(NULL)
-, slice_res_(false)
-, result_(NULL)
 {
-	dbuf_ = new dbuf_pool();
-	if (conn != NULL)
+	init();
+	conn_ = conn;
+
+	if (conn != NULL) {
 		set_client_addr(*conn);
-	else
-		addr_[0] = 0;
+	}
 }
 
-redis_command::redis_command(redis_client_cluster* cluster, size_t max_conns)
-: check_addr_(false)
-, conn_(NULL)
-, cluster_(cluster)
-, max_conns_(max_conns)
-, slot_(-1)
-, slice_req_(false)
-, request_buf_(NULL)
-, request_obj_(NULL)
-, argv_size_(0)
-, argv_(NULL)
-, argv_lens_(NULL)
-, slice_res_(false)
-, result_(NULL)
+redis_command::redis_command(redis_client_cluster* cluster)
 {
-	dbuf_ = new dbuf_pool();
-	addr_[0] = 0;
+	init();
+	cluster_   = cluster;
 
 	if (cluster != NULL) {
 		redirect_max_ = cluster->get_redirect_max();
@@ -94,12 +72,37 @@ redis_command::redis_command(redis_client_cluster* cluster, size_t max_conns)
 	}
 }
 
+redis_command::redis_command(redis_client_cluster* cluster, size_t)
+{
+	init();
+	cluster_   = cluster;
+
+	if (cluster != NULL) {
+		redirect_max_ = cluster->get_redirect_max();
+		if (redirect_max_ <= 0) {
+			redirect_max_ = 15;
+		}
+		redirect_sleep_ = cluster->get_redirect_sleep();
+	} else {
+		redirect_max_ = 15;
+		redirect_sleep_ = 100;
+	}
+}
+
+redis_command::redis_command(redis_client_pipeline* pipeline)
+{
+	init();
+	pipeline_ = pipeline;
+}
+
 redis_command::~redis_command()
 {
-	if (argv_ != NULL)
+	if (argv_ != NULL) {
 		acl_myfree(argv_);
-	if (argv_lens_ != NULL)
+	}
+	if (argv_lens_ != NULL) {
 		acl_myfree(argv_lens_);
+	}
 	delete request_buf_;
 	delete request_obj_;
 	dbuf_->destroy();
@@ -120,8 +123,9 @@ void redis_command::clear(bool save_slot /* = false */)
 	dbuf_->dbuf_reset();
 	result_ = NULL;
 
-	if (!save_slot)
+	if (!save_slot) {
 		slot_ = -1;
+	}
 }
 
 void redis_command::set_slice_request(bool on)
@@ -146,10 +150,11 @@ void redis_command::set_client(redis_client* conn)
 void redis_command::set_client_addr(redis_client& conn)
 {
 	socket_stream* stream = conn.get_stream();
-	if (stream == NULL)
+	if (stream == NULL) {
 		addr_[0] = 0;
-	else
+	} else {
 		ACL_SAFE_STRNCPY(addr_, stream->get_peer(true), sizeof(addr_));
+	}
 }
 
 void redis_command::set_client_addr(const char* addr)
@@ -157,29 +162,41 @@ void redis_command::set_client_addr(const char* addr)
 	ACL_SAFE_STRNCPY(addr_, addr, sizeof(addr_));
 }
 
-void redis_command::set_cluster(redis_client_cluster* cluster, size_t max_conns)
+void redis_command::set_cluster(redis_client_cluster* cluster, size_t)
+{
+	set_cluster(cluster);
+}
+
+void redis_command::set_cluster(redis_client_cluster* cluster)
 {
 	cluster_ = cluster;
-	max_conns_ = max_conns;
-	if (cluster == NULL)
+	if (cluster == NULL) {
 		return;
+	}
 
 	conn_ = NULL;
 	redirect_max_ = cluster->get_redirect_max();
-	if (redirect_max_ <= 0)
+	if (redirect_max_ <= 0) {
 		redirect_max_ = 15;
+	}
 	redirect_sleep_ = cluster->get_redirect_sleep();
 }
 
-bool redis_command::eof() const
+void redis_command::set_pipeline(redis_client_pipeline* pipeline)
+{
+	pipeline_ = pipeline;
+}
+
+bool redis_command::eof(void) const
 {
 	return conn_ == NULL ? false : conn_->eof();
 }
 
 void redis_command::argv_space(size_t n)
 {
-	if (argv_size_ >= n)
+	if (argv_size_ >= n) {
 		return;
+	}
 	argv_size_ = n;
 	if (argv_ == NULL) {
 		argv_ = (const char**) acl_mymalloc(n * sizeof(char*));
@@ -199,34 +216,37 @@ void redis_command::hash_slot(const char* key)
 void redis_command::hash_slot(const char* key, size_t len)
 {
 	// 只有集群模式才需要计算哈希槽值
-	if (cluster_ == NULL)
+	if (cluster_ == NULL) {
 		return;
+	}
 
 	int max_slot = cluster_->get_max_slot();
-	if (max_slot <= 0)
+	if (max_slot <= 0) {
 		return;
+	}
 
 	// 如果缓存了哈希槽值，则不必重新计算
-	if (slot_ >= 0 && slot_ < max_slot)
+	if (slot_ >= 0 && slot_ < max_slot) {
 		return;
+	}
 
 	unsigned short n = acl_hash_crc16(key, len);
 	slot_ = (int) (n % max_slot);
 }
 
-const char* redis_command::get_client_addr() const
+const char* redis_command::get_client_addr(void) const
 {
 	return addr_;
 }
 
 /////////////////////////////////////////////////////////////////////////////
 
-size_t redis_command::result_size() const
+size_t redis_command::result_size(void) const
 {
 	return result_ ? result_->get_size() : 0;
 }
 
-redis_result_t redis_command::result_type() const
+redis_result_t redis_command::result_type(void) const
 {
 	return result_ ? result_->get_type() : REDIS_RESULT_UNKOWN;
 }
@@ -246,16 +266,17 @@ const char* redis_command::get_result(size_t i, size_t* len /* = NULL */) const
 	return result_ ? result_->get(i, len) : NULL;
 }
 
-const char* redis_command::result_status() const
+const char* redis_command::result_status(void) const
 {
 	return result_ ? result_->get_status() : "";
 }
 
-const char* redis_command::result_error() const
+const char* redis_command::result_error(void) const
 {
 	const char* ptr = result_ ? result_->get_error() : "";
-	if (ptr && *ptr)
+	if (ptr && *ptr) {
 		return ptr;
+	}
 	return last_serror();
 }
 
@@ -266,24 +287,29 @@ const redis_result* redis_command::result_child(size_t i) const
 
 const char* redis_command::result_value(size_t i, size_t* len /* = NULL */) const
 {
-	if (result_ == NULL || result_->get_type() != REDIS_RESULT_ARRAY)
+	if (result_ == NULL || result_->get_type() != REDIS_RESULT_ARRAY) {
 		return NULL;
+	}
 	const redis_result* child = result_->get_child(i);
-	if (child == NULL)
+	if (child == NULL) {
 		return NULL;
+	}
 	size_t size = child->get_size();
-	if (size == 0)
+	if (size == 0) {
 		return NULL;
-	if (size == 1)
+	}
+	if (size == 1) {
 		return child->get(0, len);
+	}
 
 	// 大内存有可能被切片成多个不连续的小内存
 	size = child->get_length();
 	size++;
 	char* buf = (char*) dbuf_->dbuf_alloc(size);
 	size = child->argv_to_string(buf, size);
-	if (len)
+	if (len) {
 		*len = size;
+	}
 	return buf;
 }
 
@@ -292,353 +318,27 @@ const redis_result* redis_command::get_result() const
 	return result_;
 }
 
-// 分析重定向信息，获得重定向的服务器地址
-const char* redis_command::get_addr(const char* info)
-{
-	char* cmd = dbuf_->dbuf_strdup(info);
-	char* slot = strchr(cmd, ' ');
-	if (slot == NULL)
-		return NULL;
-	*slot++ = 0;
-	char* addr = strchr(slot, ' ');
-	if (addr == NULL)
-		return NULL;
-	*addr++ = 0;
-	if (*addr == 0)
-		return NULL;
-
-	return addr;
-}
-
-// 根据输入的目标地址进行重定向：打开与该地址的连接，如果连接失败，则随机
-// 选取一个服务器地址进行连接
-redis_client* redis_command::redirect(redis_client_cluster* cluster,
-	const char* addr)
-{
-	redis_client_pool* conns;
-
-	// 如果服务器地址不存在，则根据服务器地址动态创建连接池对象
-	if ((conns = (redis_client_pool*) cluster->get(addr)) == NULL) {
-		cluster->set(addr, max_conns_);
-		conns = (redis_client_pool*) cluster->get(addr);
-	}
-
-	if (conns == NULL)
-		return NULL;
-
-	redis_client* conn;
-
-	int i = 0;
-
-	while (i++ < 5) {
-		conn = (redis_client*) conns->peek();
-		if (conn != NULL)
-			return conn;
-
-#ifdef AUTO_SET_ALIVE
-		conns->set_alive(false);
-#endif
-		conns = (redis_client_pool*) cluster->peek();
-		if (conns == NULL) {
-			logger_error("no connections availabble, "
-				"i: %d, addr: %s", i, addr);
-			return NULL;
-		}
-	}
-
-	logger_warn("too many retry: %d, addr: %s", i, addr);
-	return NULL;
-}
-
-redis_client* redis_command::peek_conn(redis_client_cluster* cluster, int slot)
-{
-	// 如果已经计算了哈希槽值，则优先从本地缓存中查找对应的连接池
-	// 如果未找到，则从所有集群结点中随便找一个可用的连接池对象
-
-	redis_client_pool* conns;
-	redis_client* conn;
-	int i = 0;
-
-	while (i++ < 5) {
-		if (slot < 0)
-			conns = (redis_client_pool*) cluster->peek();
-		else if ((conns = cluster->peek_slot(slot)) == NULL)
-			conns = (redis_client_pool*) cluster->peek();
-
-		if (conns == NULL) {
-			slot = -1;
-			continue;
-		}
-
-		conn = (redis_client*) conns->peek();
-		if (conn != NULL)
-			return conn;
-
-		// 取消哈希槽的地址映射关系
-		cluster->clear_slot(slot);
-
-#ifdef AUTO_SET_ALIVE
-		// 将连接池对象置为不可用状态
-		conns->set_alive(false);
-#endif
-	}
-
-	logger_warn("too many retry: %d, slot: %d", i, slot);
-	return NULL;
-}
-
-const redis_result* redis_command::run(redis_client_cluster* cluster,
-	size_t nchild, int* timeout /* = NULL */)
-{
-	redis_client* conn = peek_conn(cluster, slot_);
-
-	// 如果没有找到可用的连接对象，则直接返回 NULL 表示出错
-	if (conn == NULL) {
-		logger_error("peek_conn NULL, slot_: %d", slot_);
-		return NULL;
-	}
-
-	set_client_addr(*conn);
-	conn->set_check_addr(check_addr_);
-
-	redis_result_t type;
-	bool  last_moved = false;
-	int   n = 0;
-
-	while (n++ < redirect_max_) {
-		// 根据请求过程是否采用内存分片方式调用不同的请求过程
-		if (slice_req_)
-			result_ = conn->run(dbuf_, *request_obj_, nchild, timeout);
-		else
-			result_ = conn->run(dbuf_, *request_buf_, nchild, timeout);
-
-		// 如果连接异常断开，则需要进行重试
-		if (conn->eof()) {
-			connect_pool* pool = conn->get_pool();
-
-			// 删除哈希槽中的地址映射关系以便下次操作时重新获取
-			cluster->clear_slot(slot_);
-
-			// 将连接对象归还给连接池对象
-			pool->put(conn, false);
-
-			// 如果连接断开且请求数据为空时，则无须重试
-			if ((request_obj_ == NULL || !request_obj_->get_size())
-				&& request_buf_->empty()) {
-
-				logger_error("not retry when no request!");
-				return NULL;
-			}
-
-#ifdef AUTO_SET_ALIVE
-			// 将连接池对象置为不可用状态
-			pool->set_alive(false);
-#endif
-
-			// 从连接池集群中顺序取得一个连接对象
-			conn = peek_conn(cluster, slot_);
-			if (conn == NULL) {
-				logger_error("peek_conn NULL");
-				return result_;
-			}
-
-			last_moved = true;
-			clear(true);
-			set_client_addr(*conn);
-			continue;
-		}
-
-		if (result_ == NULL) {
-			// 将旧连接对象归还给连接池对象
-			conn->get_pool()->put(conn, true);
-			logger_error("result NULL");
-
-			return NULL;
-		}
-
-		// 取得服务器的响应结果的类型，并进行分别处理
-		type = result_->get_type();
-
-		if (type == REDIS_RESULT_UNKOWN) {
-			// 将旧连接对象归还给连接池对象
-			conn->get_pool()->put(conn, true);
-			logger_error("unknown result type: %d", type);
-
-			return NULL;
-		}
-
-		if (type != REDIS_RESULT_ERROR) {
-			// 如果发生重定向过程，则设置哈希槽对应 redis 服务地址
-			if (slot_ < 0 || !last_moved) {
-				// 将连接对象归还给连接池对象
-				conn->get_pool()->put(conn, true);
-				return result_;
-			}
-
-			// XXX: 因为此处还要引用一次 conn 对象，所以将 conn
-			// 归还给连接池的过程须放在此段代码之后
-			const char* addr = conn->get_pool()->get_addr();
-			cluster->set_slot(slot_, addr);
-
-			// 将连接对象归还给连接池对象
-			conn->get_pool()->put(conn, true);
-
-			return result_;
-		}
-
-#define	EQ(x, y) !strncasecmp((x), (y), sizeof(y) -1)
-
-		// 对于结果类型为错误类型，则需要进一步判断是否是重定向指令
-		const char* ptr = result_->get_error();
-		if (ptr == NULL || *ptr == 0) {
-			// 将旧连接对象归还给连接池对象
-			conn->get_pool()->put(conn, true);
-			logger_error("result error: null");
-
-			return result_;
-		}
-
-		// 如果出错信息为重定向指令，则执行重定向过程
-		if (EQ(ptr, "MOVED")) {
-			// 将旧连接对象归还给连接池对象
-			conn->get_pool()->put(conn, true);
-
-			const char* addr = get_addr(ptr);
-			if (addr == NULL) {
-				logger_warn("MOVED invalid, ptr: %s", ptr);
-				return result_;
-			}
-
-			conn = redirect(cluster, addr);
-
-			if (conn == NULL) {
-				logger_error("redirect NULL, addr: %s", addr);
-				return result_;
-			}
-
-			ptr = conn->get_pool()->get_addr();
-
-			set_client_addr(ptr);
-
-			if (n >= 2 && redirect_sleep_ > 0
-				&& strcmp(ptr, addr) != 0) {
-
-				logger("redirect %d, curr %s, waiting %s ...",
-					n, ptr, addr);
-				acl_doze(redirect_sleep_);
-			}
-
-			last_moved = true;
-
-			// 需要保存哈希槽值
-			clear(true);
-		} else if (EQ(ptr, "ASK")) {
-			// 将旧连接对象归还给连接池对象
-			conn->get_pool()->put(conn, true);
-
-			const char* addr = get_addr(ptr);
-			if (addr == NULL) {
-				logger_warn("ASK invalid, ptr: %s", ptr);
-				return result_;
-			}
-
-			conn = redirect(cluster, addr);
-			if (conn == NULL) {
-				logger_error("redirect NULL, addr: %s", addr);
-				return result_;
-			}
-
-			ptr = conn->get_pool()->get_addr();
-
-			set_client_addr(ptr);
-
-			if (n >= 2 && redirect_sleep_ > 0
-				&& strcmp(ptr, addr) != 0) {
-
-				logger("redirect %d, curr %s, waiting %s ...",
-					n, ptr, addr);
-				acl_doze(redirect_sleep_);
-			}
-
-			result_ = conn->run(dbuf_, "ASKING\r\n", 0);
-			if (result_ == NULL) {
-				logger_error("ASKING's reply null");
-				conn->get_pool()->put(conn, !conn->eof());
-				return NULL;
-			}
-
-			const char* status = result_->get_status();
-			if (status == NULL || strcasecmp(status, "OK") != 0) {
-				logger_error("ASKING's reply error: %s",
-					status ? status : "null");
-				conn->get_pool()->put(conn, !conn->eof());
-				return NULL;
-			}
-
-			last_moved = false;
-			clear(true);
-		}
-
-		// 处理一个主结点失效的情形
-		else if (EQ(ptr, "CLUSTERDOWN")) {
-			cluster->clear_slot(slot_);
-
-			if (redirect_sleep_ > 0) {
-				logger("%s: redirect %d, slot %d, waiting %s ...",
-					conn->get_pool()->get_addr(),
-					n, slot_, ptr);
-				acl_doze(redirect_sleep_);
-			}
-
-			// 将旧连接对象归还给连接池对象
-			conn->get_pool()->put(conn, true);
-
-			conn = peek_conn(cluster, -1);
-			if (conn == NULL) {
-				logger_error("peek_conn NULL");
-				return result_;
-			}
-
-			clear(true);
-			set_client_addr(*conn);
-		}
-
-		// 对于其它错误类型，则直接返回本次得到的响应结果对象
-		else {
-			// 将旧连接对象归还给连接池对象
-			conn->get_pool()->put(conn, true);
-
-			logger_error("server error: %s", ptr);
-			if (!slice_req_)
-				logger_error("request: %s",
-					request_buf_->c_str());
-			return result_;
-		}
-	}
-
-	if (conn != NULL)
-		conn->get_pool()->put(conn, true);
-
-	logger_warn("too many redirect: %d, max: %d", n, redirect_max_);
-	return NULL;
-}
-
 const redis_result* redis_command::run(size_t nchild /* = 0 */,
 	int* timeout /* = NULL */)
 {
-	if (cluster_ != NULL)
-		return run(cluster_, nchild, timeout);
-	if (conn_ == NULL) {
+	if (pipeline_ != NULL) {
+		result_ =  pipeline_->run(this, nchild, timeout);
+		return result_;
+	} else if (cluster_ != NULL) {
+		result_ = cluster_->run(*this, nchild, timeout);
+		return result_;
+	} else if (conn_ == NULL) {
 		logger_error("ERROR: cluster_ and conn_ are all NULL");
 		return NULL;
 	}
 
 	conn_->set_check_addr(check_addr_);
 
-	if (slice_req_)
+	if (slice_req_) {
 		result_ = conn_->run(dbuf_, *request_obj_, nchild, timeout);
-	else
+	} else {
 		result_ = conn_->run(dbuf_, *request_buf_, nchild, timeout);
+	}
 	return result_;
 }
 
@@ -663,13 +363,15 @@ int redis_command::get_number(bool* success /* = NULL */)
 {
 	const redis_result* result = run();
 	if (result == NULL || result->get_type() != REDIS_RESULT_INTEGER) {
-		if (success)
+		if (success) {
 			*success = false;
+		}
 		logger_result(result);
 		return -1;
 	}
-	if (success)
+	if (success) {
 		*success = true;
+	}
 	return result->get_integer();
 }
 
@@ -677,13 +379,15 @@ long long int redis_command::get_number64(bool* success /* = NULL */)
 {
 	const redis_result* result = run();
 	if (result == NULL || result->get_type() != REDIS_RESULT_INTEGER) {
-		if (success)
+		if (success) {
 			*success = false;
+		}
 		logger_result(result);
 		return -1;
 	}
-	if (success)
+	if (success) {
 		*success = true;
+	}
 	return result->get_integer64();
 }
 
@@ -699,8 +403,9 @@ int redis_command::get_number(std::vector<int>& out)
 
 	size_t size;
 	const redis_result** children = result->get_children(&size);
-	if (children == NULL || size == 0)
+	if (children == NULL || size == 0) {
 		return 0;
+	}
 	out.reserve(size);
 
 	const redis_result* rr;
@@ -724,8 +429,9 @@ int redis_command::get_number64(std::vector<long long int>& out)
 
 	size_t size;
 	const redis_result** children = result->get_children(&size);
-	if (children == NULL || size == 0)
+	if (children == NULL || size == 0) {
 		return 0;
+	}
 	out.reserve(size);
 
 	const redis_result* rr;
@@ -746,12 +452,13 @@ bool redis_command::check_status(const char* success /* = "OK" */)
 	}
 
 	const char* status = result->get_status();
-	if (status == NULL || *status == '\0')
+	if (status == NULL || *status == '\0') {
 		return false;
-	else if (success == NULL || strcasecmp(status, success) == 0)
+	} else if (success == NULL || strcasecmp(status, success) == 0) {
 		return true;
-	else
+	} else {
 		return false;
+	}
 }
 
 int redis_command::get_status(std::vector<bool>& out)
@@ -766,8 +473,9 @@ int redis_command::get_status(std::vector<bool>& out)
 
 	size_t size;
 	const redis_result** children = result->get_children(&size);
-	if (children == NULL || size == 0)
+	if (children == NULL || size == 0) {
 		return 0;
+	}
 
 	out.reserve(size);
 
@@ -807,8 +515,9 @@ int redis_command::get_string(string* buf)
 		logger_result(result);
 		return -1;
 	}
-	if (buf == NULL)
+	if (buf == NULL) {
 		return (int) result->get_length();
+	}
 	return result->argv_to_string(*buf);
 }
 
@@ -835,29 +544,32 @@ int redis_command::get_strings(std::vector<string>* out)
 		return -1;
 	}
 
-	if (out == NULL)
+	if (out == NULL) {
 		return (int) result->get_size();
+	}
 
 	out->clear();
 
 	size_t size;
 	const redis_result** children = result->get_children(&size);
-	if (children == NULL)
+	if (children == NULL) {
 		return 0;
+	}
 
-	if (size > 0)
+	if (size > 0) {
 		out->reserve(size);
+	}
 
 	const redis_result* rr;
 	string buf(4096);
 
 	for (size_t i = 0; i < size; i++) {
 		rr = children[i];
-		if (rr == NULL || rr->get_type() != REDIS_RESULT_STRING)
+		if (rr == NULL || rr->get_type() != REDIS_RESULT_STRING) {
 			out->push_back("");
-		else if (rr->get_size() == 0)
+		} else if (rr->get_size() == 0) {
 			out->push_back("");
-		else {
+		} else {
 			rr->argv_to_string(buf);
 			out->push_back(buf);
 			buf.clear();
@@ -880,26 +592,28 @@ int redis_command::get_strings(std::list<string>* out)
 		logger_result(result);
 		return -1;
 	}
-	if (out == NULL)
+	if (out == NULL) {
 		return (int) result->get_size();
+	}
 
 	out->clear();
 
 	size_t size;
 	const redis_result** children = result->get_children(&size);
-	if (children == NULL)
+	if (children == NULL) {
 		return 0;
+	}
 
 	const redis_result* rr;
 	string buf(4096);
 
 	for (size_t i = 0; i < size; i++) {
 		rr = children[i];
-		if (rr == NULL || rr->get_type() != REDIS_RESULT_STRING)
+		if (rr == NULL || rr->get_type() != REDIS_RESULT_STRING) {
 			out->push_back("");
-		else if (rr->get_size() == 0)
+		} else if (rr->get_size() == 0) {
 			out->push_back("");
-		else {
+		} else {
 			rr->argv_to_string(buf);
 			out->push_back(buf);
 			buf.clear();
@@ -918,15 +632,18 @@ int redis_command::get_strings(std::map<string, string>& out)
 		logger_result(result);
 		return -1;
 	}
-	if (result->get_size() == 0)
+	if (result->get_size() == 0) {
 		return 0;
+	}
 
 	size_t size;
 	const redis_result** children = result->get_children(&size);
-	if (children == NULL)
+	if (children == NULL) {
 		return -1;
-	if (size % 2 != 0)
+	}
+	if (size % 2 != 0) {
 		return -1;
+	}
 
 	string name, value;
 
@@ -967,16 +684,19 @@ int redis_command::get_strings(std::vector<string>& names,
 		logger_result(result);
 		return -1;
 	}
-	if (result->get_size() == 0)
+	if (result->get_size() == 0) {
 		return 0;
+	}
 
 	size_t size;
 	const redis_result** children = result->get_children(&size);
 
-	if (children == NULL)
+	if (children == NULL) {
 		return -1;
-	if (size % 2 != 0)
+	}
+	if (size % 2 != 0) {
 		return -1;
+	}
 
 	string name, value;
 	const redis_result* rr;
@@ -1018,16 +738,19 @@ int redis_command::get_strings(std::vector<const char*>& names,
 		logger_result(result);
 		return -1;
 	}
-	if (result->get_size() == 0)
+	if (result->get_size() == 0) {
 		return 0;
+	}
 
 	size_t size;
 	const redis_result** children = result->get_children(&size);
 
-	if (children == NULL)
+	if (children == NULL) {
 		return -1;
-	if (size % 2 != 0)
+	}
+	if (size % 2 != 0) {
 		return -1;
+	}
 
 	char* nbuf, *vbuf;
 	size_t len;
@@ -1066,9 +789,18 @@ int redis_command::get_strings(std::vector<const char*>& names,
 const redis_result** redis_command::scan_keys(const char* cmd, const char* key,
 	int& cursor, size_t& size, const char* pattern, const size_t* count)
 {
+	size_t klen = key ? strlen(key) : 0;
+	return scan_keys(cmd, key, klen, cursor, size, pattern, count);
+}
+
+const redis_result** redis_command::scan_keys(const char* cmd, const char* key,
+	size_t klen, int& cursor, size_t& size, const char* pattern,
+	const size_t* count)
+{
 	size = 0;
-	if (cursor < 0)
+	if (cursor < 0) {
 		return NULL;
+	}
 
 	const char* argv[7];
 	size_t lens[7];
@@ -1078,9 +810,9 @@ const redis_result** redis_command::scan_keys(const char* cmd, const char* key,
 	lens[argc] = strlen(cmd);
 	argc++;
 
-	if (key && *key) {
+	if (key && *key && klen > 0) {
 		argv[argc] = key;
-		lens[argc] = strlen(key);
+		lens[argc] = klen;
 		argc++;
 	}
 
@@ -1113,8 +845,9 @@ const redis_result** redis_command::scan_keys(const char* cmd, const char* key,
 		argc++;
 	}
 
-	if (key && *key)
+	if (key && *key) {
 		hash_slot(key);
+	}
 	build_request(argc, argv, lens);
 	const redis_result* result = run();
 	if (result == NULL) {
@@ -1160,26 +893,30 @@ const redis_result** redis_command::scan_keys(const char* cmd, const char* key,
 
 void redis_command::clear_request()
 {
-	if (request_buf_)
+	if (request_buf_) {
 		request_buf_->clear();
-	if (request_obj_)
+	}
+	if (request_obj_) {
 		request_obj_->clear();
+	}
 }
 
 void redis_command::build_request(size_t argc, const char* argv[], size_t lens[])
 {
-	if (slice_req_)
+	if (slice_req_) {
 		build_request2(argc, argv, lens);
-	else
+	} else {
 		build_request1(argc, argv, lens);
+	}
 }
 
 void redis_command::build_request1(size_t argc, const char* argv[], size_t lens[])
 {
-	if (request_buf_ == NULL)
+	if (request_buf_ == NULL) {
 		request_buf_ = NEW string(256);
-	else
+	} else {
 		request_buf_->clear();
+	}
 
 //#define	USE_FORMAT
 //#define	USE_SNPRINTF
@@ -1219,10 +956,11 @@ void redis_command::build_request1(size_t argc, const char* argv[], size_t lens[
 void redis_command::build_request2(size_t argc, const char* argv[], size_t lens[])
 {
 	size_t size = 1 + argc * 3;
-	if (request_obj_ == NULL)
+	if (request_obj_ == NULL) {
 		request_obj_ = NEW redis_request();
-	else
+	} else {
 		request_obj_->clear();
+	}
 	request_obj_->reserve(size);
 
 #define BLEN	32
@@ -1249,9 +987,16 @@ void redis_command::build_request2(size_t argc, const char* argv[], size_t lens[
 void redis_command::build(const char* cmd, const char* key,
 	const std::map<string, string>& attrs)
 {
+	build(cmd, key, key ? strlen(key) : 0, attrs);
+}
+
+void redis_command::build(const char* cmd, const char* key, size_t klen,
+	const std::map<string, string>& attrs)
+{
 	argc_ = 1 + attrs.size() * 2;
-	if (key != NULL)
+	if (key != NULL) {
 		argc_++;
+	}
 	argv_space(argc_);
 
 	size_t i = 0;
@@ -1259,9 +1004,9 @@ void redis_command::build(const char* cmd, const char* key,
 	argv_lens_[i] = strlen(cmd);
 	i++;
 
-	if (key) {
+	if (key && klen > 0) {
 		argv_[i] = key;
-		argv_lens_[i] = strlen(key);
+		argv_lens_[i] = klen;
 		i++;
 	}
 
@@ -1283,8 +1028,9 @@ void redis_command::build(const char* cmd, const char* key,
 	const std::map<string, const char*>& attrs)
 {
 	argc_ = 1 + attrs.size() * 2;
-	if (key != NULL)
+	if (key != NULL) {
 		argc_++;
+	}
 	argv_space(argc_);
 
 	size_t i = 0;
@@ -1317,6 +1063,12 @@ void redis_command::build(const char* cmd, const char* key,
 void redis_command::build(const char* cmd, const char* key,
 	const std::vector<string>& names, const std::vector<string>& values)
 {
+	build(cmd, key, key ? strlen(key) : 0, names, values);
+}
+
+void redis_command::build(const char* cmd, const char* key, size_t klen,
+	const std::vector<string>& names, const std::vector<string>& values)
+{
 	if (names.size() != values.size()) {
 		logger_fatal("names's size: %lu, values's size: %lu",
 			(unsigned long) names.size(),
@@ -1324,8 +1076,9 @@ void redis_command::build(const char* cmd, const char* key,
 	}
 
 	argc_ = 1 + names.size() * 2;
-	if (key != NULL)
+	if (key != NULL) {
 		argc_++;
+	}
 	argv_space(argc_);
 
 	size_t i = 0;
@@ -1333,9 +1086,9 @@ void redis_command::build(const char* cmd, const char* key,
 	argv_lens_[i] = strlen(cmd);
 	i++;
 
-	if (key != NULL) {
+	if (key != NULL && klen > 0) {
 		argv_[i] = key;
-		argv_lens_[i] = strlen(key);
+		argv_lens_[i] = klen;
 		i++;
 	}
 
@@ -1364,8 +1117,9 @@ void redis_command::build(const char* cmd, const char* key,
 	}
 
 	argc_ = 1 + names.size() * 2;
-	if (key != NULL)
+	if (key != NULL) {
 		argc_++;
+	}
 	argv_space(argc_);
 
 	size_t i = 0;
@@ -1399,8 +1153,9 @@ void redis_command::build(const char* cmd, const char* key,
 	const char* names[], const char* values[], size_t argc)
 {
 	argc_ = 1 + argc * 2;
-	if (key != NULL)
+	if (key != NULL) {
 		argc_++;
+	}
 	argv_space(argc_);
 
 	size_t i = 0;
@@ -1431,8 +1186,9 @@ void redis_command::build(const char* cmd, const char* key,
 	const int names[], const char* values[], size_t argc)
 {
 	argc_ = 1 + argc * 2;
-	if (key != NULL)
+	if (key != NULL) {
 		argc_++;
+	}
 	argv_space(argc_);
 
 	size_t i = 0;
@@ -1466,9 +1222,18 @@ void redis_command::build(const char* cmd, const char* key,
 	const char* names[], const size_t names_len[],
 	const char* values[], const size_t values_len[], size_t argc)
 {
+	build(cmd, key, key ? strlen(key) : 0, names, names_len,
+		values, values_len, argc);
+}
+
+void redis_command::build(const char* cmd, const char* key, size_t klen,
+	const char* names[], const size_t names_len[],
+	const char* values[], const size_t values_len[], size_t argc)
+{
 	argc_ = 1 + argc * 2;
-	if (key != NULL)
+	if (key != NULL) {
 		argc_++;
+	}
 	argv_space(argc_);
 
 	size_t i = 0;
@@ -1476,9 +1241,9 @@ void redis_command::build(const char* cmd, const char* key,
 	argv_lens_[i] = strlen(cmd);
 	i++;
 
-	if (key != NULL) {
+	if (key != NULL && klen > 0) {
 		argv_[i] = key;
-		argv_lens_[i] = strlen(key);
+		argv_lens_[i] = klen;
 		i++;
 	}
 
@@ -1500,10 +1265,17 @@ void redis_command::build(const char* cmd, const char* key,
 void redis_command::build(const char* cmd, const char* key,
 	const std::vector<string>& names)
 {
+	build(cmd, key, key ? strlen(key) : 0, names);
+}
+
+void redis_command::build(const char* cmd, const char* key, size_t klen,
+	const std::vector<string>& names)
+{
 	size_t argc = names.size();
 	argc_ = 1 + argc;
-	if (key != NULL)
+	if (key != NULL) {
 		argc_++;
+	}
 	argv_space(argc_);
 
 	size_t i = 0;
@@ -1511,9 +1283,9 @@ void redis_command::build(const char* cmd, const char* key,
 	argv_lens_[i] = strlen(cmd);
 	i++;
 
-	if (key != NULL) {
+	if (key != NULL && klen > 0) {
 		argv_[i] = key;
-		argv_lens_[i] = strlen(key);
+		argv_lens_[i] = klen;
 		i++;
 	}
 
@@ -1531,8 +1303,9 @@ void redis_command::build(const char* cmd, const char* key,
 {
 	size_t argc = names.size();
 	argc_ = 1 + argc;
-	if (key != NULL)
+	if (key != NULL) {
 		argc_++;
+	}
 	argv_space(argc_);
 
 	size_t i = 0;
@@ -1560,8 +1333,9 @@ void redis_command::build(const char* cmd, const char* key,
 {
 	size_t argc = names.size();
 	argc_ = 1 + argc;
-	if (key != NULL)
+	if (key != NULL) {
 		argc_++;
+	}
 	argv_space(argc_);
 
 	size_t i = 0;
@@ -1591,8 +1365,9 @@ void redis_command::build(const char* cmd, const char* key,
 	const char* names[], size_t argc)
 {
 	argc_ = 1 + argc;
-	if (key != NULL)
+	if (key != NULL) {
 		argc_++;
+	}
 	argv_space(argc_);
 
 	size_t i = 0;
@@ -1615,12 +1390,20 @@ void redis_command::build(const char* cmd, const char* key,
 	build_request(argc_, argv_, argv_lens_);
 }
 
+
 void redis_command::build(const char* cmd, const char* key,
 	const char* names[], const size_t lens[], size_t argc)
 {
+	build(cmd, key, key ? strlen(key) : 0, names, lens, argc);
+}
+
+void redis_command::build(const char* cmd, const char* key, size_t klen,
+	const char* names[], const size_t lens[], size_t argc)
+{
 	argc_ = 1 + argc;
-	if (key != NULL)
+	if (key != NULL) {
 		argc_++;
+	}
 	argv_space(argc_);
 
 	size_t i = 0;
@@ -1628,9 +1411,9 @@ void redis_command::build(const char* cmd, const char* key,
 	argv_lens_[i] = strlen(cmd);
 	i++;
 
-	if (key != NULL) {
+	if (key != NULL && klen > 0) {
 		argv_[i] = key;
-		argv_lens_[i] = strlen(key);
+		argv_lens_[i] = klen;
 		i++;
 	}
 
@@ -1647,8 +1430,9 @@ void redis_command::build(const char* cmd, const char* key,
 	const int names[], size_t argc)
 {
 	argc_ = 1 + argc;
-	if (key != NULL)
+	if (key != NULL) {
 		argc_++;
+	}
 	argv_space(argc_);
 
 	size_t i = 0;
